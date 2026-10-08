@@ -351,6 +351,21 @@ def save_state(state):
 
 def check(config, state, dry_run=False):
     webhook = config["webhook_url"]
+
+    # Announce (without a ping) the first run of a changed bot file, as a visual
+    # check that an update really went live
+    with open(os.path.abspath(__file__), "rb") as f:
+        version = hashlib.sha1(f.read().replace(b"\r\n", b"\n")).hexdigest()[:7]
+    if state.get("_bot", {}).get("version") != version:
+        discord_send(webhook, {
+            "content": "✅ Spoiler bot updated. Running on the latest version (`%s`)." % version,
+            "allowed_mentions": {"parse": []},
+        }, dry_run=dry_run)
+        state["_bot"] = {"version": version}
+        log("New bot version %s announced in Discord." % version)
+        if not dry_run:
+            save_state(state)
+
     log("Scouting OtakuKart for new spoilers...")
     chapters = find_chapter_posts()
     if not chapters:
