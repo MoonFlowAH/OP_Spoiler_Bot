@@ -1,0 +1,35 @@
+name: One Piece spoilers
+
+on:
+  schedule:
+    - cron: "0,30 * * * *"   # every 30 minutes (GitHub may start it late)
+  workflow_dispatch:       # adds a "Run workflow" button for manual checks
+
+permissions:
+  contents: write          # lets the run save state.json back to the repo
+
+concurrency:
+  group: spoilers
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for new spoilers
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_PING_ROLE_ID: ${{ secrets.DISCORD_PING_ROLE_ID }}
+        run: python3 spoiler_bot.py --once
+
+      - name: Remember what was posted
+        if: always()
+        run: |
+          git config user.name "spoiler-bot"
+          git config user.email "spoiler-bot@users.noreply.github.com"
+          git add state.json
+          git diff --cached --quiet || git commit -m "Update posted-spoiler history"
+          git push
