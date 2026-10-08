@@ -55,6 +55,15 @@ SECTION_PING_RE = re.compile(
 )
 IMG_RE = re.compile(r'<img\b[^>]*?\ssrc="([^"]+)"', re.I)
 
+MONTHS = ["january", "february", "march", "april", "may", "june", "july",
+          "august", "september", "october", "november", "december"]
+# Official chapters go up on MANGA Plus and VIZ on the release date at 15:00 UTC
+RELEASE_HOUR_UTC = 15
+OFFICIAL_LINKS = (
+    "[MANGA Plus](https://mangaplus.shueisha.co.jp/titles/100020) • "
+    "[VIZ](https://www.viz.com/shonenjump/chapters/one-piece)"
+)
+
 COLORS = {"unconfirmed": 0xE67E22, "hint": 0x3498DB, "confirmed": 0x2ECC71}
 DEFAULT_COLOR = 0xD32F2F
 MAX_DESC = 4000
@@ -243,6 +252,41 @@ def header_payload(chapter, link, release, role_id):
     return payload
 
 
+def release_time(release):
+    """Turn the thread's release date ("Sunday, 11 October 2026") into a UTC datetime."""
+    text = release or ""
+    m = re.search(r"(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+),?\s+(\d{4})", text)
+    if m:
+        day, month, year = m.groups()
+    else:
+        m = re.search(r"([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})", text)
+        if not m:
+            return None
+        month, day, year = m.groups()
+    if month.lower() not in MONTHS:
+        return None
+    try:
+        return datetime(int(year), MONTHS.index(month.lower()) + 1, int(day), RELEASE_HOUR_UTC)
+    except ValueError:
+        return None
+
+
+def release_payload(chapter, role_id):
+    payload = {
+        "embeds": [{
+            "title": "📖 One Piece Chapter %d is out!" % chapter,
+            "description": "Read it on the official release, free on release day:\n"
+                           + OFFICIAL_LINKS,
+            "color": DEFAULT_COLOR,
+        }],
+        "allowed_mentions": {"parse": []},
+    }
+    if role_id:
+        payload["content"] = "<@&%s>" % role_id
+        payload["allowed_mentions"] = {"roles": [str(role_id)]}
+    return payload
+
+
 def discord_send(webhook_url, payload, message_id=None, dry_run=False):
     """Post a new webhook message, or edit `message_id`. Returns the message id."""
     if dry_run:
@@ -308,7 +352,7 @@ def check(config, state, dry_run=False):
 
         if key not in state and chapter != newest:
             # A chapter that was already over before the bot first saw it: don't replay it
-            state[key] = {"header": "skipped", "items": {i["id"]: {"hash": i["hash"]} for i in items}}
+            state[key] = {"header": "skipped", "release": "skipped", "items": {i["id"]: {"hash": i["hash"]} for i in items}}
             continue
 
         ch_state = state.setdefault(key, {"header": None, "items": {}})
@@ -349,6 +393,18 @@ def check(config, state, dry_run=False):
                 chapter, "edited" if old_ids else "posted", item["title"], item["id"]))
             if not dry_run:
                 save_state(state)
+
+        if not ch_state.get("release"):
+            when = release_time(release)
+            now = datetime.utcnow()
+            if when and now >= when:
+                if now - when > timedelta(days=2):
+                    ch_state["release"] = "skipped"  # long out already: don't announce late
+                else:
+                    ch_state["release"] = discord_send(
+                        webhook, release_payload(chapter, config.get("ping_role_id")),
+                        dry_run=dry_run)
+                    log("Chapter %d: announced the official release." % chapter)
 
         if sent:
             log("Chapter %d: %d spoiler(s) delivered to Discord." % (chapter, sent))
