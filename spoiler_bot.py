@@ -13,6 +13,7 @@ Only the Python standard library is used (works on Python 3.8+).
 """
 
 import argparse
+import calendar
 import hashlib
 import html
 import json
@@ -59,6 +60,8 @@ MONTHS = ["january", "february", "march", "april", "may", "june", "july",
           "august", "september", "october", "november", "december"]
 # Official chapters go up on MANGA Plus and VIZ on the release date at 15:00 UTC
 RELEASE_HOUR_UTC = 15
+# How long before the official release the "drops soon" heads-up goes out
+HEADS_UP_HOURS = 24
 OFFICIAL_LINKS = (
     "[MANGA Plus](https://mangaplus.shueisha.co.jp/titles/100020) • "
     "[VIZ](https://www.viz.com/shonenjump/chapters/one-piece)"
@@ -235,7 +238,11 @@ def item_messages(item, chapter):
 
 def header_payload(chapter, link, release, role_id):
     desc = "Spoilers will be posted below as they are revealed."
-    if release:
+    when = release_time(release)
+    if when:
+        # Discord timestamps show in each reader's own timezone, with a live countdown
+        desc += "\n**Official release:** <t:%d:F> (<t:%d:R>)" % (unix(when), unix(when))
+    elif release:
         desc += "\n**Official release:** " + release
     payload = {
         "embeds": [{
@@ -271,14 +278,21 @@ def release_time(release):
         return None
 
 
-def release_payload(chapter, role_id):
+def unix(when):
+    return calendar.timegm(when.timetuple())
+
+
+def release_payload(chapter, role_id, when=None):
+    """The "chapter is out" post, or the day-before heads-up when `when` is given."""
+    if when:
+        title = "⏳ One Piece Chapter %d drops soon" % chapter
+        desc = ("The official chapter releases <t:%d:R>, on <t:%d:F>.\nWhere to read it: "
+                % (unix(when), unix(when))) + OFFICIAL_LINKS
+    else:
+        title = "📖 One Piece Chapter %d is out!" % chapter
+        desc = "Read it on the official release, free on release day:\n" + OFFICIAL_LINKS
     payload = {
-        "embeds": [{
-            "title": "📖 One Piece Chapter %d is out!" % chapter,
-            "description": "Read it on the official release, free on release day:\n"
-                           + OFFICIAL_LINKS,
-            "color": DEFAULT_COLOR,
-        }],
+        "embeds": [{"title": title, "description": desc, "color": DEFAULT_COLOR}],
         "allowed_mentions": {"parse": []},
     }
     if role_id:
@@ -397,6 +411,12 @@ def check(config, state, dry_run=False):
         if not ch_state.get("release"):
             when = release_time(release)
             now = datetime.utcnow()
+            if when and when - timedelta(hours=HEADS_UP_HOURS) <= now < when \
+                    and not ch_state.get("heads_up"):
+                ch_state["heads_up"] = discord_send(
+                    webhook, release_payload(chapter, config.get("ping_role_id"), when),
+                    dry_run=dry_run)
+                log("Chapter %d: sent the release heads-up." % chapter)
             if when and now >= when:
                 if now - when > timedelta(days=2):
                     ch_state["release"] = "skipped"  # long out already: don't announce late
