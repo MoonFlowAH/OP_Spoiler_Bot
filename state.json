@@ -110,5 +110,16 @@
   },
   "_bot": {
     "version": "ab4f23d"
+  },
+  "1196": {
+    "header": "1558225531072417935",
+    "items": {
+      "section-one-piece-1196-spoilers": {
+        "hash": "c4016df3010e5c21283ca463f49abd68903cbc1e",
+        "messages": [
+          "1558225546544939129"
+        ]
+      }
+    }
   }
 }
