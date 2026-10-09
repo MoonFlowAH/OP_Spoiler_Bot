@@ -2,7 +2,7 @@ name: One Piece spoilers
 
 on:
   schedule:
-    - cron: "0,30 * * * *"   # every 30 minutes (GitHub may start it late)
+    - cron: "7,37 * * * *"   # every 30 minutes (GitHub may start it late)
   workflow_dispatch:       # adds a "Run workflow" button for manual checks
 
 permissions:
